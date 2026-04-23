@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { DashboardAuthGate } from "@/components/auth/dashboard-auth-gate";
 import { AppShell } from "@/components/layout/app-shell";
 
 type DashboardLayoutProps = {
@@ -6,5 +7,9 @@ type DashboardLayoutProps = {
 };
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      <DashboardAuthGate>{children}</DashboardAuthGate>
+    </AppShell>
+  );
 }
