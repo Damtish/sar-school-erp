@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum RoleStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ProgramStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum StudentStatus {
+  APPLICANT
+  ACTIVE
+  ON_LEAVE
+  GRADUATED
+  WITHDRAWN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ChargeStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  WAIVED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD
+  MOBILE_MONEY
+}
+
+enum PaymentStatus {
+  POSTED
+  VOIDED
+  REFUNDED
+}
+
+enum PenaltyStatus {
+  ACTIVE
+  WAIVED
+  SETTLED
+}
+
+enum GradeStatus {
+  DRAFT
+  FINAL
+}
+
+enum Semester {
+  SEMESTER_1
+  SEMESTER_2
+  SUMMER
+}
+
+enum ImportModule {
+  USERS
+  STUDENTS
+  FINANCE
+  REGISTRAR
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AuditStatus {
+  SUCCESS
+  FAILURE
+}
+
+model User {
+  id             String          @id @default(uuid()) @db.Uuid
+  email          String          @unique
+  firstName      String
+  lastName       String
+  passwordHash   String?
+  status         UserStatus      @default(ACTIVE)
+  lastLoginAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  userRoles      UserRole[]
+  receivedBy     Payment[]       @relation("PaymentReceivedBy")
+  importBatches  ImportBatch[]   @relation("ImportInitiatedBy")
+  auditLogs      AuditLog[]      @relation("AuditActor")
+  studentProfile Student?        @relation("StudentUser")
+  transferEvents StudentDepartmentHistory[] @relation("DepartmentHistoryChangedBy")
+
+  @@index([status])
+}
+
+model Role {
+  id              String           @id @default(uuid()) @db.Uuid
+  code            String           @unique
+  name            String
+  description     String?
+  status          RoleStatus       @default(ACTIVE)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id              String           @id @default(uuid()) @db.Uuid
+  key             String           @unique
+  name            String
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  rolePermissions RolePermission[]
+}
+
+model UserRole {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Department {
+  id             String                     @id @default(uuid()) @db.Uuid
+  code           String                     @unique
+  name           String
+  description    String?
+  status         DepartmentStatus           @default(ACTIVE)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  programs       Program[]
+  students       Student[]                  @relation("StudentCurrentDepartment")
+  courses        Course[]
+  feeRules       FeeRule[]
+  fromHistory    StudentDepartmentHistory[] @relation("FromDepartment")
+  toHistory      StudentDepartmentHistory[] @relation("ToDepartment")
+}
+
+model Program {
+  id             String                     @id @default(uuid()) @db.Uuid
+  departmentId   String                     @db.Uuid
+  code           String                     @unique
+  name           String
+  description    String?
+  durationYears  Int?
+  status         ProgramStatus              @default(ACTIVE)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  department     Department                 @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  students       Student[]                  @relation("StudentCurrentProgram")
+  courses        Course[]
+  feeRules       FeeRule[]
+  fromHistory    StudentDepartmentHistory[] @relation("FromProgram")
+  toHistory      StudentDepartmentHistory[] @relation("ToProgram")
+
+  @@index([departmentId])
+}
+
+model Student {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  studentNumber        String                     @unique
+  firstName            String
+  middleName           String?
+  lastName             String
+  gender               Gender?
+  dateOfBirth          DateTime?
+  admissionDate        DateTime?
+  status               StudentStatus              @default(APPLICANT)
+  currentAcademicYear  String?
+  currentSemester      Semester?
+  currentDepartmentId  String?                    @db.Uuid
+  currentProgramId     String?                    @db.Uuid
+  userId               String?                    @unique @db.Uuid
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  currentDepartment    Department?                @relation("StudentCurrentDepartment", fields: [currentDepartmentId], references: [id], onDelete: SetNull)
+  currentProgram       Program?                   @relation("StudentCurrentProgram", fields: [currentProgramId], references: [id], onDelete: SetNull)
+  user                 User?                      @relation("StudentUser", fields: [userId], references: [id], onDelete: SetNull)
+  departmentHistory    StudentDepartmentHistory[]
+  monthlyCharges       StudentMonthlyCharge[]
+  payments             Payment[]
+  penalties            Penalty[]
+  gradeRecords         GradeRecord[]
+
+  @@index([currentDepartmentId])
+  @@index([currentProgramId])
+  @@index([status])
+}
+
+model StudentDepartmentHistory {
+  id               String      @id @default(uuid()) @db.Uuid
+  studentId        String      @db.Uuid
+  fromDepartmentId String?     @db.Uuid
+  toDepartmentId   String      @db.Uuid
+  fromProgramId    String?     @db.Uuid
+  toProgramId      String?     @db.Uuid
+  transferDate     DateTime
+  reason           String?
+  changedById      String?     @db.Uuid
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  student          Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromDepartment   Department? @relation("FromDepartment", fields: [fromDepartmentId], references: [id], onDelete: SetNull)
+  toDepartment     Department  @relation("ToDepartment", fields: [toDepartmentId], references: [id], onDelete: Restrict)
+  fromProgram      Program?    @relation("FromProgram", fields: [fromProgramId], references: [id], onDelete: SetNull)
+  toProgram        Program?    @relation("ToProgram", fields: [toProgramId], references: [id], onDelete: SetNull)
+  changedBy        User?       @relation("DepartmentHistoryChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([studentId, transferDate])
+  @@index([toDepartmentId])
+}
+
+model FeeRule {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  description  String?
+  departmentId String?  @db.Uuid
+  programId    String?  @db.Uuid
+  academicYear String
+  semester     Semester?
+  amount       Decimal  @db.Decimal(12, 2)
+  currency     String   @default("ETB")
+  dueDay       Int?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  program      Program?    @relation(fields: [programId], references: [id], onDelete: SetNull)
+  charges      StudentMonthlyCharge[]
+
+  @@index([academicYear, semester, isActive])
+  @@index([departmentId, programId])
+}
+
+model StudentMonthlyCharge {
+  id           String       @id @default(uuid()) @db.Uuid
+  studentId    String       @db.Uuid
+  feeRuleId    String?      @db.Uuid
+  academicYear String
+  month        Int
+  dueDate      DateTime?
+  chargeAmount Decimal      @db.Decimal(12, 2)
+  status       ChargeStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeRule      FeeRule?     @relation(fields: [feeRuleId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+  penalties    Penalty[]
+
+  @@unique([studentId, academicYear, month])
+  @@index([feeRuleId])
+  @@index([status])
+}
+
+model Payment {
+  id              String             @id @default(uuid()) @db.Uuid
+  studentId       String             @db.Uuid
+  monthlyChargeId String?            @db.Uuid
+  amount          Decimal            @db.Decimal(12, 2)
+  paidAt          DateTime           @default(now())
+  paymentMethod   PaymentMethod
+  referenceNumber String?
+  receivedById    String?            @db.Uuid
+  status          PaymentStatus      @default(POSTED)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  student         Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  monthlyCharge   StudentMonthlyCharge? @relation(fields: [monthlyChargeId], references: [id], onDelete: SetNull)
+  receivedBy      User?              @relation("PaymentReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
+
+  @@index([studentId, paidAt])
+  @@index([monthlyChargeId])
+  @@index([status])
+}
+
+model Penalty {
+  id              String             @id @default(uuid()) @db.Uuid
+  studentId       String             @db.Uuid
+  monthlyChargeId String?            @db.Uuid
+  reason          String
+  amount          Decimal            @db.Decimal(12, 2)
+  appliedAt       DateTime           @default(now())
+  status          PenaltyStatus      @default(ACTIVE)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  student         Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  monthlyCharge   StudentMonthlyCharge? @relation(fields: [monthlyChargeId], references: [id], onDelete: SetNull)
+
+  @@index([studentId, appliedAt])
+  @@index([status])
+}
+
+model Course {
+  id            String       @id @default(uuid()) @db.Uuid
+  code          String       @unique
+  title         String
+  creditHours   Int?
+  departmentId  String?      @db.Uuid
+  programId     String?      @db.Uuid
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  department    Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  program       Program?     @relation(fields: [programId], references: [id], onDelete: SetNull)
+  gradeRecords  GradeRecord[]
+
+  @@index([departmentId])
+  @@index([programId])
+}
+
+model GradeRecord {
+  id           String      @id @default(uuid()) @db.Uuid
+  studentId    String      @db.Uuid
+  courseId     String      @db.Uuid
+  academicYear String
+  semester     Semester
+  grade        String
+  gradePoint   Decimal?    @db.Decimal(4, 2)
+  status       GradeStatus @default(FINAL)
+  recordedAt   DateTime    @default(now())
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  student      Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course       Course      @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, courseId, semester, academicYear])
+  @@index([courseId])
+}
+
+model ImportBatch {
+  id           String       @id @default(uuid()) @db.Uuid
+  module       ImportModule
+  fileName     String
+  fileType     String?
+  totalRows    Int          @default(0)
+  successRows  Int          @default(0)
+  failedRows   Int          @default(0)
+  status       ImportStatus @default(PENDING)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  notes        String?
+  initiatedById String?     @db.Uuid
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  initiatedBy  User?        @relation("ImportInitiatedBy", fields: [initiatedById], references: [id], onDelete: SetNull)
+
+  @@index([module, status])
+}
+
+model AuditLog {
+  id          String      @id @default(uuid()) @db.Uuid
+  actorUserId String?     @db.Uuid
+  action      String
+  entityType  String
+  entityId    String?
+  beforeData  Json?
+  afterData   Json?
+  ipAddress   String?
+  userAgent   String?
+  status      AuditStatus @default(SUCCESS)
+  createdAt   DateTime    @default(now())
+  actorUser   User?       @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}

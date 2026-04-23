@@ -1,0 +1,16 @@
+services:
+  sar-postgres:
+    image: postgres:16
+    container_name: sar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sar_dev
+      POSTGRES_USER: sar_user
+      POSTGRES_PASSWORD: sar_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - sar_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  sar_postgres_data:
