@@ -211,6 +211,8 @@ model Student {
   lastName             String
   gender               Gender?
   dateOfBirth          DateTime?
+  phone                String?
+  admissionYear        Int?
   admissionDate        DateTime?
   status               StudentStatus              @default(APPLICANT)
   currentAcademicYear  String?
@@ -232,6 +234,8 @@ model Student {
   @@index([currentDepartmentId])
   @@index([currentProgramId])
   @@index([status])
+  @@index([phone])
+  @@index([studentNumber, lastName])
 }
 
 model StudentDepartmentHistory {
