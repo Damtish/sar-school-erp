@@ -83,14 +83,7 @@ export default function StudentsPage() {
   });
 
   const apiBase = useMemo(() => getApiBaseUrl(), []);
-  const filteredPrograms = useMemo(
-    () =>
-      programs.filter(
-        (program) =>
-          !form.departmentId || program.departmentId === form.departmentId,
-      ),
-    [form.departmentId, programs],
-  );
+  const filteredPrograms = useMemo(() => programs, [programs]);
 
   const loadStudents = useCallback(async (searchText?: string) => {
     const token = getStoredToken() ?? window.localStorage.getItem("accessToken");
@@ -138,39 +131,58 @@ export default function StudentsPage() {
     }
   }, [apiBase]);
 
-  const loadLookups = useCallback(async () => {
+  const loadDepartments = useCallback(async () => {
     const token = getStoredToken() ?? window.localStorage.getItem("accessToken");
     if (!token) {
       return;
     }
 
     try {
-      const [depRes, programRes] = await Promise.all([
-        fetch(`${apiBase}/departments`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        }),
-        fetch(`${apiBase}/programs`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        }),
-      ]);
+      const depRes = await fetch(`${apiBase}/departments`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
 
       const depPayload = (await depRes.json().catch(() => null)) as
         | ListResponse<Department>
-        | null;
-      const programPayload = (await programRes.json().catch(() => null)) as
-        | ListResponse<Program>
         | null;
 
       if (depRes.ok) {
         setDepartments((depPayload?.items ?? []).filter((item) => item.active));
       }
+    } catch {
+      setDepartments([]);
+    }
+  }, [apiBase]);
+
+  const loadPrograms = useCallback(async (departmentId?: string) => {
+    const token = getStoredToken() ?? window.localStorage.getItem("accessToken");
+    if (!token) {
+      return;
+    }
+
+    if (!departmentId) {
+      setPrograms([]);
+      return;
+    }
+
+    try {
+      const url = new URL(`${apiBase}/programs`);
+      url.searchParams.set("departmentId", departmentId);
+
+      const programRes = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const programPayload = (await programRes.json().catch(() => null)) as
+        | ListResponse<Program>
+        | null;
+
       if (programRes.ok) {
         setPrograms((programPayload?.items ?? []).filter((item) => item.active));
       }
     } catch {
-      setDepartments([]);
       setPrograms([]);
     }
   }, [apiBase]);
@@ -185,11 +197,19 @@ export default function StudentsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadLookups();
+      void loadDepartments();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loadLookups]);
+  }, [loadDepartments]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadPrograms(form.departmentId || undefined);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [form.departmentId, loadPrograms]);
 
   async function handleAddStudent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -255,7 +275,8 @@ export default function StudentsPage() {
         programId: "",
       });
 
-      await loadLookups();
+      await loadDepartments();
+      await loadPrograms();
       await loadStudents(query);
     } catch (error) {
       setFormError(
