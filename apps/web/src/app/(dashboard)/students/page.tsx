@@ -10,6 +10,19 @@ type StudentStatus =
   | "GRADUATED"
   | "WITHDRAWN";
 type Gender = "MALE" | "FEMALE" | "OTHER";
+type Department = {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+};
+type Program = {
+  id: string;
+  departmentId: string;
+  name: string;
+  code: string;
+  active: boolean;
+};
 
 type Student = {
   id: string;
@@ -32,6 +45,10 @@ type StudentsResponse = {
   items: Student[];
   total: number;
 };
+type ListResponse<T> = {
+  items: T[];
+  total: number;
+};
 
 const STATUS_OPTIONS: StudentStatus[] = [
   "APPLICANT",
@@ -43,6 +60,8 @@ const STATUS_OPTIONS: StudentStatus[] = [
 
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -64,6 +83,14 @@ export default function StudentsPage() {
   });
 
   const apiBase = useMemo(() => getApiBaseUrl(), []);
+  const filteredPrograms = useMemo(
+    () =>
+      programs.filter(
+        (program) =>
+          !form.departmentId || program.departmentId === form.departmentId,
+      ),
+    [form.departmentId, programs],
+  );
 
   const loadStudents = useCallback(async (searchText?: string) => {
     const token = getStoredToken() ?? window.localStorage.getItem("accessToken");
@@ -111,6 +138,43 @@ export default function StudentsPage() {
     }
   }, [apiBase]);
 
+  const loadLookups = useCallback(async () => {
+    const token = getStoredToken() ?? window.localStorage.getItem("accessToken");
+    if (!token) {
+      return;
+    }
+
+    try {
+      const [depRes, programRes] = await Promise.all([
+        fetch(`${apiBase}/departments`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
+        fetch(`${apiBase}/programs`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
+      ]);
+
+      const depPayload = (await depRes.json().catch(() => null)) as
+        | ListResponse<Department>
+        | null;
+      const programPayload = (await programRes.json().catch(() => null)) as
+        | ListResponse<Program>
+        | null;
+
+      if (depRes.ok) {
+        setDepartments((depPayload?.items ?? []).filter((item) => item.active));
+      }
+      if (programRes.ok) {
+        setPrograms((programPayload?.items ?? []).filter((item) => item.active));
+      }
+    } catch {
+      setDepartments([]);
+      setPrograms([]);
+    }
+  }, [apiBase]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadStudents(query);
@@ -118,6 +182,14 @@ export default function StudentsPage() {
 
     return () => window.clearTimeout(timer);
   }, [query, loadStudents]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadLookups();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadLookups]);
 
   async function handleAddStudent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,7 +221,11 @@ export default function StudentsPage() {
           admissionYear: form.admissionYear ? Number(form.admissionYear) : undefined,
           status: form.status,
           departmentId: form.departmentId.trim() || undefined,
-          programId: form.programId.trim() || undefined,
+          programId: filteredPrograms.some(
+            (program) => program.id === form.programId,
+          )
+            ? form.programId.trim() || undefined
+            : undefined,
         }),
       });
 
@@ -179,6 +255,7 @@ export default function StudentsPage() {
         programId: "",
       });
 
+      await loadLookups();
       await loadStudents(query);
     } catch (error) {
       setFormError(
@@ -289,18 +366,43 @@ export default function StudentsPage() {
               </option>
             ))}
           </select>
-          <input
+          <select
             value={form.departmentId}
-            onChange={(event) => setForm((prev) => ({ ...prev, departmentId: event.target.value }))}
-            placeholder="Department ID (optional)"
+            onChange={(event) =>
+              setForm((prev) => ({
+                ...prev,
+                departmentId: event.target.value,
+                programId: "",
+              }))
+            }
             className="rounded-lg border border-sar-line bg-white px-3 py-2 text-sm outline-none ring-sar-primary focus:ring-2"
-          />
-          <input
+          >
+            <option value="">Select department (optional)</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.code} - {department.name}
+              </option>
+            ))}
+          </select>
+          <select
             value={form.programId}
-            onChange={(event) => setForm((prev) => ({ ...prev, programId: event.target.value }))}
-            placeholder="Program ID (optional)"
-            className="rounded-lg border border-sar-line bg-white px-3 py-2 text-sm outline-none ring-sar-primary focus:ring-2"
-          />
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, programId: event.target.value }))
+            }
+            disabled={!form.departmentId}
+            className="rounded-lg border border-sar-line bg-white px-3 py-2 text-sm outline-none ring-sar-primary focus:ring-2 disabled:cursor-not-allowed disabled:bg-sar-soft"
+          >
+            <option value="">
+              {form.departmentId
+                ? "Select program (optional)"
+                : "Select department first"}
+            </option>
+            {filteredPrograms.map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.code} - {program.name}
+              </option>
+            ))}
+          </select>
           <div className="md:col-span-2 lg:col-span-3">
             {formError ? (
               <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
