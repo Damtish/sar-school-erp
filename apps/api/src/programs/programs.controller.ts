@@ -4,7 +4,7 @@ import {
   Delete,
   Get,
   Param,
-  Patch,
+  Put,
   Post,
   Query,
   UseGuards,
@@ -35,7 +35,7 @@ export class ProgramsController {
     return this.programsService.create(dto);
   }
 
-  @Patch(":id")
+  @Put(":id")
   update(@Param("id") id: string, @Body() dto: UpdateProgramDto) {
     return this.programsService.update(id, dto);
   }
