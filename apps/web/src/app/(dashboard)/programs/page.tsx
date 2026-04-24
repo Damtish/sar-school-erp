@@ -199,7 +199,7 @@ export default function ProgramsPage() {
     if (!token) throw new Error("No auth token found. Please log in again.");
 
     const response = await fetch(`${apiBase}/programs/${id}`, {
-      method: "PATCH",
+      method: "PUT",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,

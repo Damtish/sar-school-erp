@@ -1,29 +1,88 @@
-import { SummaryCard } from "@/components/dashboard/summary-card";
+"use client";
 
-const summaryStats = [
-  {
-    label: "Total Students",
-    value: "1,248",
-    hint: "+36 enrolled in the last 30 days",
-  },
-  {
-    label: "Paid This Month",
-    value: "ETB 2.4M",
-    hint: "84% of invoices settled",
-  },
-  {
-    label: "Unpaid This Month",
-    value: "ETB 458K",
-    hint: "142 pending balances",
-  },
-  {
-    label: "Departments",
-    value: "12",
-    hint: "Medicine, Nursing, Pharmacy and more",
-  },
-];
+import { useEffect, useMemo, useState } from "react";
+import { SummaryCard } from "@/components/dashboard/summary-card";
+import { getApiBaseUrl, getStoredToken } from "@/lib/auth";
+
+type FinanceOverview = {
+  totalStudents: number;
+  totalDepartments: number;
+  unpaidInvoicesCount: number;
+  unpaidInvoicesAmount: number;
+  paidThisMonthAmount: number;
+  paidThisMonthCount: number;
+};
+
+function formatMoney(value: number) {
+  return `ETB ${value.toLocaleString()}`;
+}
 
 export default function DashboardPage() {
+  const apiBase = useMemo(() => getApiBaseUrl(), []);
+  const [overview, setOverview] = useState<FinanceOverview | null>(null);
+
+  useEffect(() => {
+    const token = getStoredToken() ?? window.localStorage.getItem("accessToken");
+    if (!token) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadOverview() {
+      try {
+        const response = await fetch(`${apiBase}/finance/overview`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | FinanceOverview
+          | null;
+        if (payload) {
+          setOverview(payload);
+        }
+      } catch {
+        // keep fallback card values when request fails
+      }
+    }
+
+    void loadOverview();
+    return () => controller.abort();
+  }, [apiBase]);
+
+  const summaryStats = [
+    {
+      label: "Total Students",
+      value: overview ? overview.totalStudents.toLocaleString() : "...",
+      hint: "Live total from student records",
+    },
+    {
+      label: "Paid This Month",
+      value: overview ? formatMoney(overview.paidThisMonthAmount) : "...",
+      hint: overview
+        ? `${overview.paidThisMonthCount} posted payments`
+        : "Loading finance totals",
+    },
+    {
+      label: "Unpaid Invoices",
+      value: overview ? formatMoney(overview.unpaidInvoicesAmount) : "...",
+      hint: overview
+        ? `${overview.unpaidInvoicesCount} outstanding invoices`
+        : "Loading outstanding totals",
+    },
+    {
+      label: "Departments",
+      value: overview ? overview.totalDepartments.toLocaleString() : "...",
+      hint: "Active and inactive departments",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-sar-line bg-gradient-to-r from-sar-primary to-sar-primary-strong px-6 py-7 text-white">
@@ -56,11 +115,11 @@ export default function DashboardPage() {
             Finance Snapshot
           </h3>
           <p className="mt-2 text-sm text-sar-muted">
-            Fee collection and outstanding balances will be visualized here in
-            Phase 1.
+            Finance cards now use real invoice and payment totals from the API.
           </p>
           <div className="mt-4 rounded-lg bg-sar-soft p-4 text-sm text-sar-muted">
-            Chart placeholder
+            Use the Finance module to create invoices, record payments, and run
+            balance lookups.
           </div>
         </article>
 

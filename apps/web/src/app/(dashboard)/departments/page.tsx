@@ -145,7 +145,7 @@ export default function DepartmentsPage() {
     }
 
     const response = await fetch(`${apiBase}/departments/${id}`, {
-      method: "PATCH",
+      method: "PUT",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
