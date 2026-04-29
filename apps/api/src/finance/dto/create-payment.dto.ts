@@ -5,12 +5,12 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
-  IsString,
+  IsUUID,
   Min,
 } from "class-validator";
 
 export class CreatePaymentDto {
-  @IsString()
+  @IsUUID()
   invoiceId!: string;
 
   @Type(() => Number)

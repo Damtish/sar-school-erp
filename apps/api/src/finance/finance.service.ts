@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { InvoiceStatus, PaymentMethod, PaymentStatus, Prisma } from "@prisma/client";
@@ -111,11 +113,20 @@ export class FinanceService {
 
   async createInvoice(dto: CreateInvoiceDto) {
     try {
+      const student = await this.prisma.student.findUnique({
+        where: { studentNumber: dto.studentNumber.trim() },
+      });
+      if (!student) {
+        throw new NotFoundException(
+          `Student not found for student number ${dto.studentNumber}`,
+        );
+      }
+
       const item = await this.prisma.invoice.create({
         data: {
-          studentId: dto.studentId,
+          studentId: student.id,
           amount: new Prisma.Decimal(dto.amount),
-          dueDate: new Date(dto.dueDate),
+          dueDate: this.parseDateOrThrow(dto.dueDate, "dueDate"),
           status: InvoiceStatus.UNPAID,
         },
         include: {
@@ -144,7 +155,9 @@ export class FinanceService {
         data: {
           studentId: dto.studentId,
           amount: dto.amount !== undefined ? new Prisma.Decimal(dto.amount) : undefined,
-          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+          dueDate: dto.dueDate
+            ? this.parseDateOrThrow(dto.dueDate, "dueDate")
+            : undefined,
           status: dto.status,
         },
         include: {
@@ -243,91 +256,105 @@ export class FinanceService {
   }
 
   async createPayment(dto: CreatePaymentDto) {
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: dto.invoiceId },
-    });
-    if (!invoice) {
-      throw new NotFoundException("Invoice not found");
-    }
+    try {
+      const invoice = await this.prisma.invoice.findUnique({
+        where: { id: dto.invoiceId },
+      });
+      if (!invoice) {
+        throw new NotFoundException("Invoice not found");
+      }
+      if (invoice.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException("Cannot record payment for cancelled invoice");
+      }
 
-    const item = await this.prisma.payment.create({
-      data: {
-        invoiceId: invoice.id,
-        studentId: invoice.studentId,
-        amount: new Prisma.Decimal(dto.amount),
-        paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
-        paymentMethod: dto.method,
-        status: PaymentStatus.POSTED,
-      },
-      include: {
-        invoice: {
-          include: {
-            student: {
-              select: {
-                id: true,
-                studentNumber: true,
-                firstName: true,
-                middleName: true,
-                lastName: true,
+      const item = await this.prisma.payment.create({
+        data: {
+          invoiceId: invoice.id,
+          studentId: invoice.studentId,
+          amount: new Prisma.Decimal(dto.amount),
+          paidAt: dto.paidAt ? this.parseDateOrThrow(dto.paidAt, "paidAt") : new Date(),
+          paymentMethod: dto.method,
+          status: PaymentStatus.POSTED,
+        },
+        include: {
+          invoice: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  studentNumber: true,
+                  firstName: true,
+                  middleName: true,
+                  lastName: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    await this.recalculateInvoiceStatus(invoice.id);
-    return this.toPaymentResponse(item);
+      await this.recalculateInvoiceStatus(invoice.id);
+      return this.toPaymentResponse(item);
+    } catch (error) {
+      this.handleWriteError(error);
+    }
   }
 
   async updatePayment(id: string, dto: UpdatePaymentDto) {
-    const existing = await this.prisma.payment.findUnique({
-      where: { id },
-    });
-    if (!existing || !existing.invoiceId) {
-      throw new NotFoundException("Payment not found");
-    }
+    try {
+      const existing = await this.prisma.payment.findUnique({
+        where: { id },
+      });
+      if (!existing || !existing.invoiceId) {
+        throw new NotFoundException("Payment not found");
+      }
 
-    const targetInvoiceId = dto.invoiceId ?? existing.invoiceId;
-    const targetInvoice = await this.prisma.invoice.findUnique({
-      where: { id: targetInvoiceId },
-    });
-    if (!targetInvoice) {
-      throw new NotFoundException("Invoice not found");
-    }
+      const targetInvoiceId = dto.invoiceId ?? existing.invoiceId;
+      const targetInvoice = await this.prisma.invoice.findUnique({
+        where: { id: targetInvoiceId },
+      });
+      if (!targetInvoice) {
+        throw new NotFoundException("Invoice not found");
+      }
+      if (targetInvoice.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException("Cannot assign payment to cancelled invoice");
+      }
 
-    const item = await this.prisma.payment.update({
-      where: { id },
-      data: {
-        invoiceId: targetInvoice.id,
-        studentId: targetInvoice.studentId,
-        amount: dto.amount !== undefined ? new Prisma.Decimal(dto.amount) : undefined,
-        paidAt: dto.paidAt ? new Date(dto.paidAt) : undefined,
-        paymentMethod: dto.method as PaymentMethod | undefined,
-      },
-      include: {
-        invoice: {
-          include: {
-            student: {
-              select: {
-                id: true,
-                studentNumber: true,
-                firstName: true,
-                middleName: true,
-                lastName: true,
+      const item = await this.prisma.payment.update({
+        where: { id },
+        data: {
+          invoiceId: targetInvoice.id,
+          studentId: targetInvoice.studentId,
+          amount: dto.amount !== undefined ? new Prisma.Decimal(dto.amount) : undefined,
+          paidAt: dto.paidAt ? this.parseDateOrThrow(dto.paidAt, "paidAt") : undefined,
+          paymentMethod: dto.method as PaymentMethod | undefined,
+        },
+        include: {
+          invoice: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  studentNumber: true,
+                  firstName: true,
+                  middleName: true,
+                  lastName: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    await this.recalculateInvoiceStatus(existing.invoiceId);
-    if (existing.invoiceId !== targetInvoice.id) {
-      await this.recalculateInvoiceStatus(targetInvoice.id);
+      await this.recalculateInvoiceStatus(existing.invoiceId);
+      if (existing.invoiceId !== targetInvoice.id) {
+        await this.recalculateInvoiceStatus(targetInvoice.id);
+      }
+
+      return this.toPaymentResponse(item);
+    } catch (error) {
+      this.handleWriteError(error);
     }
-
-    return this.toPaymentResponse(item);
   }
 
   async deletePayment(id: string) {
@@ -342,14 +369,20 @@ export class FinanceService {
   }
 
   async studentBalanceLookup(query: { studentId?: string; studentNumber?: string }) {
+    const hasStudentId = Boolean(query.studentId?.trim());
+    const hasStudentNumber = Boolean(query.studentNumber?.trim());
+    if (!hasStudentId && !hasStudentNumber) {
+      throw new BadRequestException("Provide studentNumber for balance lookup");
+    }
+
     const student =
-      query.studentId
+      hasStudentId
         ? await this.prisma.student.findUnique({
-            where: { id: query.studentId },
+            where: { id: query.studentId!.trim() },
           })
-        : query.studentNumber
+        : hasStudentNumber
           ? await this.prisma.student.findUnique({
-              where: { studentNumber: query.studentNumber },
+              where: { studentNumber: query.studentNumber!.trim() },
             })
           : null;
 
@@ -381,7 +414,7 @@ export class FinanceService {
       }),
     ]);
 
-    const totalInvoiced = Number(invoiceAgg._sum.amount ?? 0);
+    const totalInvoices = Number(invoiceAgg._sum.amount ?? 0);
     const totalPaid = Number(paymentAgg._sum.amount ?? 0);
 
     return {
@@ -392,9 +425,10 @@ export class FinanceService {
           .filter(Boolean)
           .join(" "),
       },
-      totalInvoiced,
+      totalInvoices,
+      totalInvoiced: totalInvoices,
       totalPaid,
-      balance: totalInvoiced - totalPaid,
+      balance: totalInvoices - totalPaid,
       invoices: invoices.map((invoice) => ({
         id: invoice.id,
         amount: Number(invoice.amount),
@@ -402,6 +436,15 @@ export class FinanceService {
         status: invoice.status,
         createdAt: invoice.createdAt,
       })),
+    };
+  }
+
+  async getStudentBalanceById(studentId: string) {
+    const result = await this.studentBalanceLookup({ studentId });
+    return {
+      totalInvoices: result.totalInvoices,
+      totalPaid: result.totalPaid,
+      balance: result.balance,
     };
   }
 
@@ -514,9 +557,36 @@ export class FinanceService {
   }
 
   private handleWriteError(error: unknown): never {
+    if (
+      error instanceof BadRequestException ||
+      error instanceof NotFoundException ||
+      error instanceof ConflictException
+    ) {
+      throw error;
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       throw new ConflictException("Invalid student or invoice reference");
     }
-    throw error;
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      throw new NotFoundException("Requested record was not found");
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2023") {
+      throw new BadRequestException("Invalid identifier format");
+    }
+    if (error instanceof Prisma.PrismaClientValidationError) {
+      throw new BadRequestException("Invalid finance payload");
+    }
+    if (error instanceof Error) {
+      throw new InternalServerErrorException(`Finance operation failed: ${error.message}`);
+    }
+    throw new InternalServerErrorException("Finance operation failed");
+  }
+
+  private parseDateOrThrow(value: string, fieldName: string) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`Invalid ${fieldName}`);
+    }
+    return parsed;
   }
 }

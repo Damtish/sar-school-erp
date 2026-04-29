@@ -83,4 +83,9 @@ export class FinanceController {
   ) {
     return this.financeService.studentBalanceLookup({ studentId, studentNumber });
   }
+
+  @Get("balance/:studentId")
+  studentBalanceById(@Param("studentId") studentId: string) {
+    return this.financeService.getStudentBalanceById(studentId);
+  }
 }

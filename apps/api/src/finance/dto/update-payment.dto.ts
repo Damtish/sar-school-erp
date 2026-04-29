@@ -5,13 +5,13 @@ import {
   IsEnum,
   IsNumber,
   IsOptional,
-  IsString,
+  IsUUID,
   Min,
 } from "class-validator";
 
 export class UpdatePaymentDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   invoiceId?: string;
 
   @IsOptional()

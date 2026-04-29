@@ -1,9 +1,10 @@
 import { Type } from "class-transformer";
-import { IsDateString, IsNumber, IsString, Min } from "class-validator";
+import { IsDateString, IsNumber, IsString, MaxLength, Min } from "class-validator";
 
 export class CreateInvoiceDto {
   @IsString()
-  studentId!: string;
+  @MaxLength(50)
+  studentNumber!: string;
 
   @Type(() => Number)
   @IsNumber()

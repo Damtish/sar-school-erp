@@ -71,7 +71,7 @@ export default function FinancePage() {
   const [submittingInvoice, setSubmittingInvoice] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({
-    studentId: "",
+    studentNumber: "",
     amount: "",
     dueDate: "",
   });
@@ -82,7 +82,6 @@ export default function FinancePage() {
     paidAt: "",
   });
   const [balanceLookup, setBalanceLookup] = useState({
-    studentId: "",
     studentNumber: "",
   });
 
@@ -180,7 +179,7 @@ export default function FinancePage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          studentId: invoiceForm.studentId.trim(),
+          studentNumber: invoiceForm.studentNumber.trim(),
           amount: Number(invoiceForm.amount),
           dueDate: invoiceForm.dueDate,
         }),
@@ -200,7 +199,7 @@ export default function FinancePage() {
         throw new Error(message ?? "Failed to create invoice.");
       }
 
-      setInvoiceForm({ studentId: "", amount: "", dueDate: "" });
+      setInvoiceForm({ studentNumber: "", amount: "", dueDate: "" });
       await loadData();
     } catch (requestError) {
       setInvoiceFormError(
@@ -283,9 +282,6 @@ export default function FinancePage() {
 
     try {
       const url = new URL(`${apiBase}/finance/student-balance`);
-      if (balanceLookup.studentId.trim()) {
-        url.searchParams.set("studentId", balanceLookup.studentId.trim());
-      }
       if (balanceLookup.studentNumber.trim()) {
         url.searchParams.set("studentNumber", balanceLookup.studentNumber.trim());
       }
@@ -375,14 +371,14 @@ export default function FinancePage() {
           <form onSubmit={handleCreateInvoice} className="mt-4 grid gap-3">
             <input
               required
-              value={invoiceForm.studentId}
+              value={invoiceForm.studentNumber}
               onChange={(event) =>
                 setInvoiceForm((prev) => ({
                   ...prev,
-                  studentId: event.target.value,
+                  studentNumber: event.target.value,
                 }))
               }
-              placeholder="Student UUID"
+              placeholder="Student Number (e.g. AMC-0001)"
               className="rounded-lg border border-sar-line bg-white px-3 py-2 text-sm outline-none ring-sar-primary focus:ring-2"
             />
             <input
@@ -446,8 +442,9 @@ export default function FinancePage() {
                 .filter((invoice) => invoice.status !== "PAID" && invoice.status !== "CANCELLED")
                 .map((invoice) => (
                   <option key={invoice.id} value={invoice.id}>
+                    Invoice #{invoice.id.slice(0, 8)} |{" "}
                     {invoice.student?.studentId ?? invoice.studentId} |{" "}
-                    {formatMoney(invoice.amount)} | {invoice.status}
+                    {formatMoney(invoice.amount)}
                   </option>
                 ))}
             </select>
@@ -507,17 +504,7 @@ export default function FinancePage() {
           <h2 className="text-lg font-semibold text-sar-ink">Student Balance Lookup</h2>
           <form onSubmit={handleBalanceLookup} className="mt-4 grid gap-3">
             <input
-              value={balanceLookup.studentId}
-              onChange={(event) =>
-                setBalanceLookup((prev) => ({
-                  ...prev,
-                  studentId: event.target.value,
-                }))
-              }
-              placeholder="Student UUID (optional)"
-              className="rounded-lg border border-sar-line bg-white px-3 py-2 text-sm outline-none ring-sar-primary focus:ring-2"
-            />
-            <input
+              required
               value={balanceLookup.studentNumber}
               onChange={(event) =>
                 setBalanceLookup((prev) => ({
